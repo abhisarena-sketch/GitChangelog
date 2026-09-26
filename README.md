@@ -72,7 +72,7 @@ Git ChangeLog works with virtually any Git repository.
 From inside any Git repository:
 
 ```bash
-npx git-changelog init
+npx git-changelog-cli init
 ```
 
 ### 2. Choose your destination
@@ -1073,5 +1073,5 @@ The goal is simple:
 **Your Git history, automatically turned into engineering knowledge.**
 
 ```bash
-npx git-changelog init
+npx git-changelog-cli init
 ```
