@@ -48,6 +48,7 @@ The engine and analyzers must not change for a new destination.
 - No new runtime dependencies without a strong reason. Today there is one (`yaml`).
 - Anything that reaches an AI provider or a destination must go through redaction.
 - Add or update a test for every behavior change.
+- `dist/` is committed so the CLI can be installed straight from GitHub. Run `npm run build` and commit `dist/` together with any `src/` change.
 - Update `CHANGELOG.md` under *Unreleased*.
 
 ## Pull requests
