@@ -1,4 +1,4 @@
-# Git ChangeLog
+# GitChangeLog
 
 ### Turn every Git commit into engineering knowledge.
 
