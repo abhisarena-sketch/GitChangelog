@@ -6,7 +6,7 @@ Security fixes are released for the latest minor version.
 
 ## Reporting a vulnerability
 
-**Please do not open a public issue.** Report it privately through [GitHub Security Advisories](https://github.com/abhisarena-sketch/Obsidian-hook/security/advisories/new).
+**Please do not open a public issue.** Report it privately through [GitHub Security Advisories](https://github.com/abhisarena-sketch/GitChangelog/security/advisories/new).
 
 Include the affected version, steps to reproduce, and the impact. You will get an acknowledgement within 72 hours and a status update within 7 days.
 

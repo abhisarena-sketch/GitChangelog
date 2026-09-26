@@ -24,6 +24,6 @@ We want participation in this project to be a harassment-free experience for eve
 
 This code applies in all project spaces (issues, pull requests, discussions) and when someone represents the project in public.
 
-Report unacceptable behavior to the maintainers by opening a private [security advisory](https://github.com/abhisarena-sketch/Obsidian-hook/security/advisories/new) or by contacting a maintainer directly. All reports are reviewed promptly and confidentially. Maintainers may remove, edit or reject contributions, or temporarily or permanently ban contributors whose behavior does not follow this code.
+Report unacceptable behavior to the maintainers by opening a private [security advisory](https://github.com/abhisarena-sketch/GitChangelog/security/advisories/new) or by contacting a maintainer directly. All reports are reviewed promptly and confidentially. Maintainers may remove, edit or reject contributions, or temporarily or permanently ban contributors whose behavior does not follow this code.
 
 The enforcement guidelines of the Contributor Covenant 2.1 apply.

@@ -33,7 +33,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/abhisarena-sketch/Obsidian-hook.git"
+    "url": "git+https://github.com/abhisarena-sketch/GitChangelog.git"
   },
   "license": "MIT",
   "dependencies": {
