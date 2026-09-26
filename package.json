@@ -1,0 +1,46 @@
+{
+  "name": "git-changelog-cli",
+  "version": "0.1.0",
+  "description": "Git post-commit hook that classifies every commit into Code Changes, Bug Fixes and Feature Updates and publishes them to Notion or Obsidian.",
+  "type": "module",
+  "bin": {
+    "git-changelog": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test --test-concurrency=4 \"test/*.test.mjs\"",
+    "prepublishOnly": "npm test"
+  },
+  "keywords": [
+    "git",
+    "changelog",
+    "post-commit",
+    "hook",
+    "obsidian",
+    "notion",
+    "ai",
+    "conventional-commits"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abhisarena-sketch/Obsidian-hook.git"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2"
+  }
+}
