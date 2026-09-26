@@ -67,12 +67,20 @@ You don't need to modify your application.
 
 Git ChangeLog works with virtually any Git repository.
 
-### 1. Run the installer
+### 1. Install and run the installer
 
-From inside any Git repository:
+Requires [Node.js](https://nodejs.org) 20+ on your machine (your project doesn't need it).
+
+Install from GitHub:
 
 ```bash
-npx git-changelog-cli init
+npm install -g https://github.com/abhisarena-sketch/GitChangelog/archive/refs/heads/main.tar.gz
+```
+
+Then, from inside any Git repository:
+
+```bash
+git-changelog init
 ```
 
 ### 2. Choose your destination
@@ -1073,5 +1081,6 @@ The goal is simple:
 **Your Git history, automatically turned into engineering knowledge.**
 
 ```bash
-npx git-changelog-cli init
+npm install -g https://github.com/abhisarena-sketch/GitChangelog/archive/refs/heads/main.tar.gz
+git-changelog init
 ```
