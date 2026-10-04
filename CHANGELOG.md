@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- Obsidian destination now writes one note per category (`Bug Fixes.md`, `Feature Updates.md`, `Code Changes.md`) instead of one note per commit. Entries are grouped by repository, newest first, and each records its author, commit, branch and impact. Existing per-commit notes are left untouched.
+
 ## [0.1.0] - 2026-09-26
 
 ### Added

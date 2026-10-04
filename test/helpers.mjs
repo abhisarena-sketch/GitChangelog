@@ -73,16 +73,18 @@ export function obsidianRepo(name, files) {
 
 const FOLDERS = { 'Feature Updates': 'feature-update', 'Bug Fixes': 'bug-fix', 'Code Changes': 'code-change' };
 
-/** All changelog notes in a vault: [{ category, file, frontmatter, text }]. */
+/** All changelog entries in a vault, one per `### ` block of the category notes: [{ category, file, frontmatter, text }]. */
 export function notes(vault, folder = 'Development/Changelog') {
   const out = [];
   for (const [label, category] of Object.entries(FOLDERS)) {
-    const dir = path.join(vault, folder, label);
-    if (!fs.existsSync(dir)) continue;
-    for (const name of fs.readdirSync(dir)) {
-      const text = fs.readFileSync(path.join(dir, name), 'utf8');
-      const fm = YAML.parse(text.match(/^---\n([\s\S]*?)\n---/)[1]);
-      out.push({ category, file: path.join(dir, name), name, frontmatter: fm, text });
+    const file = path.join(vault, folder, `${label}.md`);
+    if (!fs.existsSync(file)) continue;
+    const text = fs.readFileSync(file, 'utf8');
+    for (const block of text.split(/^(?=<!-- changelog:)/m).slice(1)) {
+      const [, commitHash, date] = block.match(/^<!-- changelog:(\S+) (\S+) -->/);
+      const author = block.match(/^- \*\*Author:\*\* (.+)$/m)?.[1];
+      const branch = block.match(/ on `([^`]+)`/)?.[1];
+      out.push({ category, file, text: block, frontmatter: { type: category, commitHash, date, commit: commitHash.slice(0, 7), author, branch } });
     }
   }
   return out;

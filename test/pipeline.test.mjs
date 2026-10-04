@@ -171,20 +171,27 @@ describe('Notion destination (mocked API)', () => {
 });
 
 describe('Obsidian destination', () => {
-  it('writes notes with frontmatter into category folders', async () => {
+  it('appends every commit to one note per category, with the author', async () => {
     const { dir, vault } = obsidianRepo('obs');
-    const { hash } = commit(dir, { 'src/a.js': 'export function a() {}\nexport function b() {}\n' }, 'feat: add workforce simulation\n\n- Added scenario creation\n- Added calculation');
+    const { hash } = commit(dir, { 'src/a.js': 'export function a() {}\nexport function b() {}\n' }, 'feat(planning): add workforce simulation\n\n- Added scenario creation\n- Added calculation');
     await processCommit(dir, 'HEAD', { env: cleanEnv() });
-    const [note] = notes(vault);
-    assert.match(note.name, new RegExp(`^\\d{4}-\\d{2}-\\d{2}-add-workforce-simulation-${hash.slice(0, 7)}\\.md$`));
-    assert.equal(note.frontmatter.type, 'feature-update');
+    const second = commit(dir, { 'src/b.js': 'export function c() {}\nexport function d() {}\n' }, 'feat: add scenario export');
+    await processCommit(dir, 'HEAD', { env: cleanEnv() });
+    const features = notes(vault).filter((n) => n.category === 'feature-update');
+    assert.equal(new Set(features.map((n) => n.file)).size, 1, 'one shared note');
+    assert.deepEqual(features.map((n) => n.frontmatter.commitHash), [second.hash, hash], 'newest first');
+    const note = features[1];
     assert.equal(note.frontmatter.commit, hash.slice(0, 7));
     assert.equal(note.frontmatter.author, 'Test Author');
     assert.equal(note.frontmatter.branch, 'main');
-    assert.deepEqual(note.frontmatter.tags, ['changelog', 'feature']);
-    assert.match(note.text, /^# Add workforce simulation$/m);
-    assert.match(note.text, /## Changes\n\n- Added scenario creation\n- Added calculation/);
-    assert.match(note.text, /## Files Changed\n\n- `src\/a\.js`/);
+    assert.match(note.text, /^### \d{4}-\d{2}-\d{2} · ✨ Feature · planning$/m);
+    assert.match(note.text, /^\*\*Add workforce simulation\*\*$/m);
+    assert.match(note.text, /\*\*Changes\*\*\n\n- Added scenario creation\n- Added calculation/);
+    assert.match(note.text, /Files changed \(1\)<\/summary>\n\n- `src\/a\.js`/);
+    const text = fs.readFileSync(note.file, 'utf8');
+    assert.match(text, /^# Feature Updates$/m);
+    assert.match(text, /^## .+ feature updates$/m);
+    assert.match(text, /^tags:\n {2}- changelog\n {2}- feature$/m);
     const vaultFiles = fs.readdirSync(vault).sort();
     assert.deepEqual(vaultFiles, ['.obsidian', 'Development'], 'nothing else in the vault is touched');
   });

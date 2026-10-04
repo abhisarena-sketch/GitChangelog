@@ -5,46 +5,71 @@ import YAML from 'yaml';
 import { CATEGORY_LABELS } from '../types.js';
 import { DEFAULT_FOLDER } from '../config.js';
 const TAG = { 'feature-update': 'feature', 'bug-fix': 'bug-fix', 'code-change': 'code-change' };
-const slugify = (s) => s.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'change';
-// Text from commits/AI must not be able to create headings, frontmatter fences or HTML in the note.
+const BADGE = { 'feature-update': '✨ Feature', 'bug-fix': '🐛 Fix', 'code-change': '🔧 Change' };
+// Text from commits/AI must not be able to create headings, frontmatter fences, HTML or entry markers in the note.
 const safeText = (s) => s.replace(/^(\s*)(#|---|<|>|\|)/gm, '$1\\$2');
-export function renderNote(entry) {
-    const frontmatter = {
-        type: entry.category,
-        date: entry.commit.date.slice(0, 10),
-        commit: entry.commit.shortHash,
-        commitHash: entry.commit.hash,
-        author: entry.commit.author,
-        repository: entry.commit.repository,
-        branch: entry.commit.branch,
-        ...(entry.areas.length ? { areas: entry.areas } : {}),
-        analysis: entry.analysis,
-        tags: ['changelog', TAG[entry.category]],
-    };
-    const list = (items) => items.map((s) => `- ${s}`).join('\n');
+const oneLine = (s) => s.replace(/\s*[\r\n]+\s*/g, ' ');
+const MARKER = /^<!-- changelog:([0-9a-f]{7,64}) (\S+) -->$/;
+/** One changelog entry, rendered as a section of its category's single note. */
+export function renderEntry(entry) {
+    const c = entry.commit;
+    const scope = c.message.match(/^\w+\(([^)]+)\)!?:/)?.[1] ?? entry.areas[0];
+    const list = (items) => items.map((s) => `- ${oneLine(s)}`).join('\n');
     const files = entry.files.slice(0, 200).map((f) => `- \`${f.replace(/`/g, "'")}\``);
     if (entry.files.length > 200)
         files.push(`- …and ${entry.files.length - 200} more`);
-    const s = entry.commit.stats;
-    const sections = [
-        `# ${entry.title.replace(/[\r\n]+/g, ' ')}`,
-        `## Summary\n\n${safeText(entry.summary)}`,
-        entry.changes.length ? `## Changes\n\n${list(entry.changes)}` : '',
-        entry.technicalDetails.length ? `## Technical Details\n\n${list(entry.technicalDetails)}` : '',
-        `## Files Changed\n\n${files.join('\n')}`,
-        `## Commit\n\n\`${entry.commit.shortHash}\` · ${entry.commit.author} · ${entry.commit.date} · \`${entry.commit.branch}\` · ${s.files} file(s), +${s.insertions}/-${s.deletions}${entry.truncated ? ' · diff truncated for analysis' : ''}\n\n\`\`\`text\n${entry.commit.message.replace(/```/g, "'''")}\n\`\`\``,
-    ].filter(Boolean);
-    return `---\n${YAML.stringify(frontmatter)}---\n\n${sections.join('\n\n')}\n`;
+    const s = c.stats;
+    const message = c.message.replace(/```/g, "'''").replace(/<!--/g, '&lt;!--');
+    return [
+        `<!-- changelog:${c.hash} ${c.date} -->`,
+        `### ${[c.date.slice(0, 10), BADGE[entry.category], scope && oneLine(scope)].filter(Boolean).join(' · ')}`,
+        `**${oneLine(entry.title)}**`,
+        [
+            `- **Author:** ${oneLine(c.author)}`,
+            `- **Commit:** \`${c.shortHash}\` on \`${oneLine(c.branch)}\``,
+            `- **Impact:** ${s.files} file(s), +${s.insertions}/-${s.deletions}${entry.truncated ? ' (diff truncated for analysis)' : ''}`,
+            `- **Analysis:** ${entry.analysis}`,
+        ].join('\n'),
+        safeText(entry.summary),
+        entry.changes.length ? `**Changes**\n\n${list(entry.changes)}` : '',
+        entry.technicalDetails.length ? `**Technical details**\n\n${list(entry.technicalDetails)}` : '',
+        `<details>\n<summary>Files changed (${entry.files.length})</summary>\n\n${files.join('\n')}\n\n</details>`,
+        `<details>\n<summary>Commit message</summary>\n\n\`\`\`text\n${message}\n\`\`\`\n\n</details>`,
+    ].filter(Boolean).join('\n\n');
 }
-function readFrontmatter(file) {
-    try {
-        const text = fs.readFileSync(file, 'utf8');
-        const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-        return m ? YAML.parse(m[1]) : null;
+/** Reads a category note back into repository sections of entry blocks. */
+function parse(text) {
+    const sections = [];
+    let section;
+    let block;
+    let fence = false;
+    for (const line of text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').split(/\r?\n/)) {
+        if (!fence) {
+            const h = line.match(/^## (.+)/);
+            if (h) {
+                section = { heading: h[1].trim(), blocks: [] };
+                sections.push(section);
+                block = undefined;
+                continue;
+            }
+            const m = line.match(MARKER);
+            if (m && section) {
+                block = { hash: m[1], time: Date.parse(m[2]), text: '' };
+                section.blocks.push(block);
+            }
+        }
+        if (/^\s*```/.test(line))
+            fence = !fence;
+        if (block)
+            block.text += `${line}\n`;
     }
-    catch {
-        return null;
-    }
+    return sections;
+}
+function renderFile(category, sections) {
+    const frontmatter = { type: category, tags: ['changelog', TAG[category]] };
+    // Newest first within each repository.
+    const body = sections.map((s) => `## ${s.heading}\n\n${[...s.blocks].sort((a, b) => (b.time || 0) - (a.time || 0)).map((b) => b.text.trim()).join('\n\n')}`);
+    return `---\n${YAML.stringify(frontmatter)}---\n\n# ${CATEGORY_LABELS[category]}\n\n${body.join('\n\n')}\n`;
 }
 export class ObsidianDestination {
     config;
@@ -55,54 +80,58 @@ export class ObsidianDestination {
     get vault() {
         return path.resolve(this.config.vaultPath);
     }
-    folder(category) {
-        return path.join(this.vault, this.config.changelogFolder || DEFAULT_FOLDER, CATEGORY_LABELS[category]);
+    get folder() {
+        return path.join(this.vault, this.config.changelogFolder || DEFAULT_FOLDER);
+    }
+    /** One note per category, e.g. `<changelogFolder>/Bug Fixes.md`. */
+    file(category) {
+        return path.join(this.folder, `${CATEGORY_LABELS[category]}.md`);
+    }
+    read(category) {
+        try {
+            return parse(fs.readFileSync(this.file(category), 'utf8'));
+        }
+        catch {
+            return [];
+        }
     }
     async initialize() {
         if (!fs.existsSync(this.vault) || !fs.statSync(this.vault).isDirectory()) {
             throw new Error(`Obsidian vault not found at ${this.vault}`);
         }
-        for (const category of Object.keys(CATEGORY_LABELS)) {
-            fs.mkdirSync(this.folder(category), { recursive: true });
-        }
-    }
-    find(commitHash, category) {
-        const dir = this.folder(category);
-        if (!fs.existsSync(dir))
-            return null;
-        const names = fs.readdirSync(dir).filter((n) => n.endsWith('.md'));
-        // Fast path: our filenames end with the short hash. Fall back to scanning all notes (renamed files).
-        const short = commitHash.slice(0, 7);
-        const ordered = [...names.filter((n) => n.endsWith(`-${short}.md`)), ...names.filter((n) => !n.endsWith(`-${short}.md`))];
-        for (const name of ordered) {
-            const file = path.join(dir, name);
-            const fm = readFrontmatter(file);
-            if (fm && fm.commitHash === commitHash && fm.type === category)
-                return file;
-        }
-        return null;
+        fs.mkdirSync(this.folder, { recursive: true });
     }
     async exists(commitHash, category) {
-        return this.find(commitHash, category) !== null;
+        return this.read(category).some((s) => s.blocks.some((b) => b.hash === commitHash));
+    }
+    upsert(entry, overwrite) {
+        const sections = this.read(entry.category);
+        const heading = `${oneLine(entry.commit.repository)} ${CATEGORY_LABELS[entry.category].toLowerCase()}`;
+        const block = { hash: entry.commit.hash, time: Date.parse(entry.commit.date), text: renderEntry(entry) };
+        const existing = sections.flatMap((s) => s.blocks).find((b) => b.hash === block.hash);
+        if (existing) {
+            if (overwrite)
+                Object.assign(existing, block);
+        }
+        else {
+            let section = sections.find((s) => s.heading === heading);
+            if (!section)
+                sections.push((section = { heading, blocks: [] }));
+            section.blocks.push(block);
+        }
+        fs.mkdirSync(this.folder, { recursive: true });
+        fs.writeFileSync(this.file(entry.category), renderFile(entry.category, sections));
     }
     async createEntry(entry) {
-        const dir = this.folder(entry.category);
-        fs.mkdirSync(dir, { recursive: true });
-        const base = `${entry.commit.date.slice(0, 10)}-${slugify(entry.title)}-${entry.commit.hash.slice(0, 7)}`;
-        const file = path.join(dir, `${base}.md`);
-        // 'wx' never overwrites a note that is already there.
-        fs.writeFileSync(file, renderNote(entry), { flag: 'wx' });
+        this.upsert(entry, false);
     }
     async updateEntry(entry) {
-        const file = this.find(entry.commit.hash, entry.category);
-        if (!file)
-            return this.createEntry(entry);
-        fs.writeFileSync(file, renderNote(entry));
+        this.upsert(entry, true);
     }
     async testConnection() {
         try {
             await this.initialize();
-            fs.accessSync(this.folder('code-change'), fs.constants.W_OK);
+            fs.accessSync(this.folder, fs.constants.W_OK);
             return true;
         }
         catch {

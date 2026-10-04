@@ -218,7 +218,7 @@ describe('privacy and security', () => {
     commit(dir, { 'src/a.js': 'export const a = 2;\n' }, 'fix: bad value\n\n---\n# Fake heading\n<script>alert(1)</script>');
     await processCommit(dir, 'HEAD', { env: cleanEnv() });
     const [note] = notes(vault);
-    const body = note.text.split('\n---\n').slice(1).join('\n---\n');
+    const body = note.text;
     assert.ok(!/^# Fake heading/m.test(body.replace(/```text[\s\S]*```/, '')), 'no injected heading outside the code block');
     assert.ok(!/^<script>/m.test(body.replace(/```text[\s\S]*```/, '')));
   });

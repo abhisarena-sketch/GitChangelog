@@ -362,63 +362,46 @@ abc1234
 
 Git ChangeLog can also write changelogs directly into an Obsidian vault.
 
-Example structure:
+Every category gets **one note**. Each commit is appended to it as a section, newest first, grouped by repository:
 
 ```text
 Development/
 └── Changelog/
-    ├── Code Changes/
-    ├── Bug Fixes/
-    └── Feature Updates/
+    ├── Code Changes.md
+    ├── Bug Fixes.md
+    └── Feature Updates.md
 ```
 
-Example file:
-
-```text
-Development/Changelog/Feature Updates/
-2026-09-26-added-workforce-planning-abc123.md
-```
-
-Each note contains frontmatter:
-
-```yaml
----
-type: feature-update
-date: 2026-09-26
-commit: abc1234
-author: Developer
-repository: workforce-platform
-branch: main
-tags:
-  - changelog
-  - feature
----
-```
-
-And structured Markdown:
+Example `Bug Fixes.md`:
 
 ```md
-# Added workforce planning
+# Bug Fixes
 
-## Summary
+## workforce-platform bug fixes
 
-Introduced workforce planning functionality.
+### 2026-10-02 · 🐛 Fix · planning
 
-## Changes
+**Guard missing scenario totals**
 
-- Added workforce requirement calculation
-- Added scenario creation
-- Added scenario comparison
+- **Author:** Developer
+- **Commit:** `abc1234` on `main`
+- **Impact:** 2 file(s), +14/-3
 
-## Files Changed
+Fixed a crash when a scenario has no totals.
 
-- src/planning/
-- src/api/planning.ts
+**Changes**
 
-## Commit
+- Added a null guard in `summarize()`
 
-`abc1234`
+**Technical details**
+
+- 2 file(s) changed, +14/-3 lines
+
+<details><summary>Files changed (2)</summary> … </details>
+<details><summary>Commit message</summary> … </details>
 ```
+
+The heading's scope comes from the Conventional Commit (`fix(planning): …`). Re-running on a commit that is already in the note is a no-op.
 
 This means your engineering history becomes part of your Obsidian knowledge base.
 
