@@ -98,42 +98,43 @@ describe('duplicate prevention', () => {
 });
 
 describe('Notion destination (mocked API)', () => {
-  it('creates structured pages in the right databases', async () => {
-    const { dir, api, databases, env } = notionRepo('notion');
+  it('appends structured entries to the right category pages, newest first', async () => {
+    const { dir, api, pages, env } = notionRepo('notion');
     const { hash } = commit(dir, { 'apps/web/src/scenario.js': 'export const s = 1;\n', 'src/calc.js': 'export const c = 1;\n' }, 'Improve scenarios');
     const result = await processCommit(dir, 'HEAD', { env: { ...env, CHANGELOG_AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'k' }, fetch: async (url, init) => (String(url).includes('anthropic') ? fakeAnthropic(() => JSON.stringify(THREE)).fetch(url, init) : api.fetch(url, init)) });
     assert.equal(result.published.length, 3);
-    const byDb = (id) => api.pages.filter((p) => p.parent.database_id === id);
-    assert.equal(byDb(databases.featureUpdates).length, 1);
-    assert.equal(byDb(databases.bugFixes).length, 1);
-    assert.equal(byDb(databases.codeChanges).length, 1);
-    const page = byDb(databases.bugFixes)[0];
-    assert.equal(page.properties.Name.title[0].text.content, 'Fixed rounding in totals', 'uses the database title property');
-    assert.equal(page.properties.Type.select.name, 'Bug Fix');
-    assert.equal(page.properties.Commit.rich_text[0].text.content, hash);
-    assert.ok(page.properties.Date.date.start);
-    assert.deepEqual(page.properties.Areas.multi_select, [{ name: 'web' }]);
-    const headings = page.children.filter((b) => b.type === 'heading_2').map((b) => b.heading_2.rich_text[0].text.content);
-    assert.deepEqual(headings, ['Summary', 'Changes', 'Technical Details', 'Files Changed', 'Commit Information']);
-    assert.ok(api.databases.get(databases.featureUpdates).properties.Commit, 'missing properties were added to existing databases');
-    // Duplicate check queries Notion
+    for (const id of Object.values(pages)) assert.deepEqual(api.commits(id), [hash]);
+    const blocks = api.pages.get(pages.bugFixes).blocks;
+    const text = (b) => b[b.type].rich_text[0].text.content;
+    assert.equal(text(blocks[0]), 'intro', 'intro stays on top');
+    assert.match(text(blocks[1]), /^\d{4}-\d{2}-\d{2} · 🐛 Fix · web$/);
+    assert.equal(text(blocks[2]), 'Fixed rounding in totals');
+    assert.ok(blocks.some((b) => b.type === 'bulleted_list_item' && text(b) === 'Author: Test Author'));
+    assert.ok(blocks.some((b) => b.type === 'toggle' && text(b).startsWith('Files changed')));
+
+    const second = commit(dir, { 'src/d.js': 'export const d = 1;\n' }, 'fix: d');
+    await processCommit(dir, 'HEAD', { env, fetch: api.fetch });
+    assert.deepEqual(api.commits(pages.bugFixes), [second.hash, hash], 'newest entry goes above the previous one');
+
+    // Duplicate check reads the page
     fs.rmSync(path.join(dir, '.changelog'), { recursive: true, force: true });
     const again = await processCommit(dir, 'HEAD', { env, fetch: api.fetch });
     assert.equal(again.published.length, 0);
     assert.ok(again.duplicates.length >= 1);
   });
 
-  it('can create the three databases', async () => {
+  it('can create the three pages', async () => {
     const api = fakeNotion();
-    const ids = await NotionDestination.createDatabases('https://www.notion.so/My-Page-0123456789abcdef0123456789abcdef', 'tok', api.fetch);
+    const parent = api.addPage('Parent');
+    const ids = await NotionDestination.createPages(`https://www.notion.so/My-Page-${parent.replace(/-/g, '')}`, 'tok', api.fetch);
     assert.equal(new Set(Object.values(ids)).size, 3);
-    const create = api.calls.filter((c) => c.url.endsWith('/databases'));
-    assert.equal(create[0].body.parent.page_id, '01234567-89ab-cdef-0123-456789abcdef');
-    assert.deepEqual(create.map((c) => c.body.title[0].text.content).sort(), ['Bug Fixes', 'Code Changes', 'Feature Updates']);
+    const create = api.calls.filter((c) => c.method === 'POST' && c.url.endsWith('/pages'));
+    assert.equal(create[0].body.parent.page_id, parent);
+    assert.deepEqual(create.map((c) => c.body.properties.title.title[0].text.content).sort(), ['Bug Fixes', 'Code Changes', 'Feature Updates']);
   });
 
   it('queues entries when Notion is down and syncs them later without duplicates', async () => {
-    const { dir, api, env } = notionRepo('notion-down');
+    const { dir, api, pages, env } = notionRepo('notion-down');
     const { hash } = commit(dir, { 'src/a.js': 'export const a = 1;\n' }, 'fix: correct a');
     api.down = true;
     const result = await processCommit(dir, 'HEAD', { env, fetch: api.fetch });
@@ -152,21 +153,19 @@ describe('Notion destination (mocked API)', () => {
     assert.equal(synced.published.length, 1);
     assert.equal(listQueue(dir).length, 0);
     assert.equal((await syncQueue(dir, { env, fetch: api.fetch })).published.length, 0);
-    assert.equal(api.pages.length, 1);
+    assert.equal(api.commits(pages.bugFixes).length, 1);
   });
 
   it('a queued entry that already exists is dropped, not duplicated', async () => {
-    const { dir, api, env } = notionRepo('notion-requeue');
+    const { dir, api, pages, env } = notionRepo('notion-requeue');
     commit(dir, { 'src/a.js': 'export const a = 1;\n' }, 'fix: a');
     await processCommit(dir, 'HEAD', { env, fetch: api.fetch });
     const { enqueue } = await dist('store.js');
-    const [page] = api.pages;
     const entry = (await processCommit(dir, 'HEAD', { env, fetch: api.fetch }, { dryRun: true })).entries[0];
     enqueue(dir, entry, 'simulated earlier failure');
     const result = await syncQueue(dir, { env, fetch: api.fetch });
     assert.equal(result.duplicates.length, 1);
-    assert.equal(api.pages.length, 1);
-    assert.ok(page);
+    assert.equal(api.commits(pages.bugFixes).length, 1);
   });
 });
 
@@ -234,14 +233,14 @@ it('switching destinations does not copy history; queued entries go to the new d
   assert.equal(listQueue(dir).length, 1);
 
   const api = fakeNotion();
-  const databases = { codeChanges: api.addDatabase(), bugFixes: api.addDatabase(), featureUpdates: api.addDatabase() };
-  writeConfig(dir, { destination: { type: 'notion', notion: { databases } } });
+  const pages = { codeChanges: api.addPage(), bugFixes: api.addPage(), featureUpdates: api.addPage() };
+  writeConfig(dir, { destination: { type: 'notion', notion: { pages } } });
   const env = cleanEnv({ NOTION_TOKEN: 'tok' });
   await syncQueue(dir, { env, fetch: api.fetch });
   const third = commit(dir, { 'src/c.js': 'export const c = 1;\n' }, 'fix: c');
   await processCommit(dir, 'HEAD', { env, fetch: api.fetch });
 
-  const inNotion = api.pages.map((p) => p.properties.Commit.rich_text[0].text.content).sort();
+  const inNotion = api.commits(pages.bugFixes).sort();
   assert.deepEqual(inNotion, [second.hash, third.hash].sort(), 'old Obsidian entries were not migrated');
   assert.deepEqual(notes(realVault).map((n) => n.frontmatter.commitHash), [first.hash], 'Obsidian history untouched');
 });

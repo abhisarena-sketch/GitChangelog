@@ -93,47 +93,49 @@ export function notes(vault, folder = 'Development/Changelog') {
 export const categoriesOf = (list, hash) => list.filter((n) => n.frontmatter.commitHash === hash).map((n) => n.category).sort();
 
 const json = (status, data) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
-
-/** In-memory Notion API. Set `api.down = true` to simulate an outage. */
+/** In-memory Notion API (pages and their top-level blocks). Set `api.down = true` to simulate an outage. */
 export function fakeNotion() {
-  const api = { down: false, databases: new Map(), pages: [], calls: [] };
-  api.addDatabase = (title = 'Name') => {
+  const api = { down: false, pages: new Map(), calls: [] };
+  const newPage = (title = '', children = []) => {
     const id = randomUUID();
-    api.databases.set(id, { properties: { [title]: { type: 'title', title: {} } } });
+    api.pages.set(id, { title, blocks: [] });
+    insert(id, children);
     return id;
   };
+  const insert = (pageId, children, after) => {
+    const blocks = api.pages.get(pageId).blocks;
+    const made = children.map((b) => ({ ...b, id: randomUUID() }));
+    const at = after ? blocks.findIndex((b) => b.id === after) + 1 : blocks.length;
+    blocks.splice(at, 0, ...made);
+    return made;
+  };
+  api.addPage = (title) => newPage(title, [{ object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: 'intro' } }] } }]);
+  /** Commit hashes recorded on a page, newest first. */
+  api.commits = (pageId) => api.pages.get(pageId).blocks.map((b) => b[b.type]?.rich_text?.[0]?.text.content).filter((t) => t?.startsWith('Commit: ')).map((t) => t.slice(8));
   api.fetch = async (url, init = {}) => {
     const body = init.body ? JSON.parse(init.body) : undefined;
     api.calls.push({ url, method: init.method, body });
     if (!String(url).startsWith('https://api.notion.com/v1/')) throw new Error(`unexpected request to ${url}`);
     if (api.down) throw new TypeError('fetch failed');
-    const p = new URL(url).pathname.replace('/v1', '');
+    const u = new URL(url);
+    const p = u.pathname.replace('/v1', '');
     let m;
     if (p === '/users/me') return json(200, { object: 'user' });
-    if (p === '/databases' && init.method === 'POST') {
-      const id = randomUUID();
-      const properties = Object.fromEntries(Object.entries(body.properties).map(([k, v]) => [k, { type: Object.keys(v)[0], ...v }]));
-      api.databases.set(id, { properties, title: body.title });
-      return json(200, { id });
-    }
-    if ((m = p.match(/^\/databases\/([^/]+)\/query$/))) {
-      const results = api.pages.filter(
-        (pg) => pg.parent.database_id === m[1] && pg.properties.Commit?.rich_text.map((t) => t.text.content).join('') === body.filter.rich_text.equals,
-      );
-      return json(200, { results });
-    }
-    if ((m = p.match(/^\/databases\/([^/]+)$/))) {
-      const db = api.databases.get(m[1]);
-      if (!db) return json(404, { message: `Could not find database with ID: ${m[1]}` });
-      if (init.method === 'PATCH') {
-        for (const [k, v] of Object.entries(body.properties)) db.properties[k] = { type: Object.keys(v)[0], ...v };
-      }
-      return json(200, { id: m[1], properties: db.properties });
-    }
     if (p === '/pages' && init.method === 'POST') {
-      if (!api.databases.has(body.parent.database_id)) return json(404, { message: 'database not found' });
-      api.pages.push(body);
-      return json(200, { id: randomUUID() });
+      if (!api.pages.has(body.parent.page_id)) return json(404, { message: 'parent not found' });
+      return json(200, { id: newPage(body.properties.title.title[0].text.content, body.children) });
+    }
+    if ((m = p.match(/^\/pages\/([^/]+)$/))) {
+      return api.pages.has(m[1]) ? json(200, { id: m[1] }) : json(404, { message: `Could not find page with ID: ${m[1]}` });
+    }
+    if ((m = p.match(/^\/blocks\/([^/]+)\/children$/))) {
+      if (!api.pages.has(m[1])) return json(404, { message: `Could not find block with ID: ${m[1]}` });
+      if (init.method === 'PATCH') return json(200, { results: insert(m[1], body.children, body.after) });
+      const blocks = api.pages.get(m[1]).blocks;
+      const size = Number(u.searchParams.get('page_size') ?? 100);
+      const start = Number(u.searchParams.get('start_cursor') ?? 0);
+      const results = blocks.slice(start, start + size);
+      return json(200, { results, has_more: start + size < blocks.length, next_cursor: String(start + size) });
     }
     return json(400, { message: `unhandled ${init.method} ${p}` });
   };
@@ -143,10 +145,10 @@ export function fakeNotion() {
 export function notionRepo(name, files) {
   const dir = makeRepo(name, files);
   const api = fakeNotion();
-  const databases = { codeChanges: api.addDatabase(), bugFixes: api.addDatabase(), featureUpdates: api.addDatabase('Title') };
-  writeConfig(dir, { destination: { type: 'notion', notion: { databases } } });
+  const pages = { codeChanges: api.addPage(), bugFixes: api.addPage(), featureUpdates: api.addPage() };
+  writeConfig(dir, { destination: { type: 'notion', notion: { pages } } });
   commit(dir, {}, 'chore: add changelog config');
-  return { dir, api, databases, env: cleanEnv({ NOTION_TOKEN: 'ntn_test_token_for_fake_api' }) };
+  return { dir, api, pages, env: cleanEnv({ NOTION_TOKEN: 'ntn_test_token_for_fake_api' }) };
 }
 
 /** Anthropic Messages API mock; `respond(requestBody)` returns the text the model "says". */

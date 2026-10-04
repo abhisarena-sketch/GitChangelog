@@ -306,7 +306,7 @@ code-change
 
 Git ChangeLog can publish your changelog directly into Notion.
 
-You can configure three logical databases:
+Every category gets **one Notion page**. Each commit is appended to it as a group of blocks, newest first, right below the page's intro line:
 
 ```text
 Notion
@@ -316,45 +316,34 @@ Notion
 └── Feature Updates
 ```
 
-Each entry can contain structured information such as:
-
-| Property | Description |
-|---|---|
-| Title | Human-readable change title |
-| Type | Change category |
-| Date | Commit date |
-| Commit | Git commit hash |
-| Author | Commit author |
-| Repository | Repository name |
-| Branch | Git branch |
-| Summary | Change summary |
-| Changes | Detailed changes |
-| Files Changed | Relevant files |
-
-Example:
+Example `Bug Fixes` page:
 
 ```text
-Feature Updates
+Newest changes first. Every entry lists its author and commit.
 
-Added workforce simulation
+2026-10-02 · 🐛 Fix · planning
+Guard missing scenario totals
+• Author: Developer
+• Commit: abc1234…
+• Repository: workforce-platform (main)
+• Impact: 2 file(s), +14/-3
+• Analysis: local
 
-Summary
-Introduced scenario-based workforce simulation.
+Fixed a crash when a scenario has no totals.
 
 Changes
-• Added scenario creation
-• Added workforce calculations
-• Added scenario comparison
+• Added a null guard in summarize()
 
-Repository
-workforce-platform
+Technical details
+• 2 file(s) changed, +14/-3 lines
 
-Branch
-main
-
-Commit
-abc1234
+▸ Files changed (2)
+▸ Commit message
 ```
+
+`git-changelog init` can create the three pages under a parent page you share with your integration, or you can point it at existing pages (`--notion-code-page`, `--notion-bug-page`, `--notion-feature-page`). The heading's scope comes from the Conventional Commit (`fix(planning): …`).
+
+> **Upgrading:** earlier versions wrote one database row per commit and stored `databases` IDs in `.changelogrc.yml`. Config now uses `pages`; re-run `git-changelog config notion`. Existing database rows are left untouched.
 
 ---
 

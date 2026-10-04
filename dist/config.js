@@ -60,9 +60,9 @@ export function validateConfig(config) {
         throw new ConfigError('destination.obsidian.vaultPath is missing. Run: git-changelog config obsidian');
     }
     if (destination.type === 'notion') {
-        const db = destination.notion?.databases;
+        const db = destination.notion?.pages;
         if (!db?.codeChanges || !db.bugFixes || !db.featureUpdates) {
-            throw new ConfigError('Notion database IDs are missing. Run: git-changelog config notion');
+            throw new ConfigError('Notion page IDs are missing. Run: git-changelog config notion');
         }
     }
     if (!['anthropic', 'openai'].includes(config.ai.provider)) {

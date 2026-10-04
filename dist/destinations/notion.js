@@ -1,31 +1,23 @@
-import { CATEGORY_LABELS, CATEGORY_NAMES as TYPE_NAME } from '../types.js';
+import { CATEGORY_LABELS } from '../types.js';
 const API = 'https://api.notion.com/v1';
 const VERSION = '2022-06-28';
-const DB_KEY = {
+const PAGE_KEY = {
     'feature-update': 'featureUpdates',
     'bug-fix': 'bugFixes',
     'code-change': 'codeChanges',
 };
-/** Properties every changelog database needs (besides its title property). */
-const PROPERTIES = {
-    Type: { select: { options: Object.values(TYPE_NAME).map((name) => ({ name })) } },
-    Date: { date: {} },
-    Commit: { rich_text: {} },
-    Author: { rich_text: {} },
-    Repository: { select: {} },
-    Branch: { rich_text: {} },
-    Summary: { rich_text: {} },
-    'Files Changed': { rich_text: {} },
-    Areas: { multi_select: {} },
-};
-const rich = (content) => {
+const BADGE = { 'feature-update': '✨ Feature', 'bug-fix': '🐛 Fix', 'code-change': '🔧 Change' };
+const rich = (content, bold = false) => {
     const chunks = [];
-    for (let i = 0; i < Math.min(content.length, 6000); i += 2000)
-        chunks.push({ type: 'text', text: { content: content.slice(i, i + 2000) } });
+    for (let i = 0; i < Math.min(content.length, 6000); i += 2000) {
+        chunks.push({ type: 'text', text: { content: content.slice(i, i + 2000) }, ...(bold ? { annotations: { bold: true } } : {}) });
+    }
     return chunks.length ? chunks : [{ type: 'text', text: { content: '' } }];
 };
-const block = (type, content, extra = {}) => ({ object: 'block', type, [type]: { rich_text: rich(content), ...extra } });
-const selectName = (s) => s.replace(/,/g, ' ').slice(0, 100) || 'unknown';
+const block = (type, content, extra = {}, bold = false) => ({ object: 'block', type, [type]: { rich_text: rich(content, bold), ...extra } });
+const plain = (b) => (b?.[b?.type]?.rich_text ?? []).map((t) => t.plain_text ?? t.text?.content ?? '').join('');
+const oneLine = (s) => s.replace(/\s*[\r\n]+\s*/g, ' ');
+const intro = () => block('paragraph', 'Newest changes first. Every entry lists its author and commit.');
 export const parseNotionId = (value) => {
     const hex = value.replace(/-/g, '').match(/[0-9a-f]{32}(?=[^0-9a-f]*$)/i)?.[0];
     return hex ? `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}` : value.trim();
@@ -43,7 +35,6 @@ export class NotionDestination {
     fetchImpl;
     timeoutMs;
     name = 'Notion';
-    titleProperty = new Map();
     constructor(config, token, fetchImpl = fetch, timeoutMs = 30000) {
         this.config = config;
         this.token = token;
@@ -64,73 +55,63 @@ export class NotionDestination {
             throw new NotionApiError(res.status, `Notion API ${res.status}: ${data.message ?? res.statusText}`);
         return data;
     }
-    db(category) {
-        const id = this.config.databases[DB_KEY[category]];
+    /** One page per category; every commit is appended to it as a group of blocks. */
+    page(category) {
+        const id = this.config.pages[PAGE_KEY[category]];
         if (!id)
-            throw new Error(`No Notion database configured for ${CATEGORY_LABELS[category]}`);
+            throw new Error(`No Notion page configured for ${CATEGORY_LABELS[category]}`);
         return parseNotionId(id);
     }
-    /** Makes sure each database has the changelog properties, adding any that are missing. */
+    /** Checks that each changelog page is shared with the integration. */
     async initialize() {
-        for (const category of Object.keys(DB_KEY)) {
-            const id = this.db(category);
-            const db = await this.request('GET', `/databases/${id}`);
-            const props = db.properties ?? {};
-            const title = Object.entries(props).find(([, p]) => p.type === 'title')?.[0] ?? 'Title';
-            this.titleProperty.set(id, title);
-            const missing = Object.fromEntries(Object.entries(PROPERTIES).filter(([name]) => !props[name]));
-            if (Object.keys(missing).length)
-                await this.request('PATCH', `/databases/${id}`, { properties: missing });
-        }
+        for (const category of Object.keys(PAGE_KEY))
+            await this.request('GET', `/pages/${this.page(category)}`);
     }
     async exists(commitHash, category) {
-        const data = await this.request('POST', `/databases/${this.db(category)}/query`, {
-            filter: { property: 'Commit', rich_text: { equals: commitHash } },
-            page_size: 1,
-        });
-        return (data.results ?? []).length > 0;
-    }
-    properties(entry, titleProperty) {
-        return {
-            [titleProperty]: { title: rich(entry.title) },
-            Type: { select: { name: TYPE_NAME[entry.category] } },
-            Date: { date: { start: entry.commit.date } },
-            Commit: { rich_text: rich(entry.commit.hash) },
-            Author: { rich_text: rich(entry.commit.author) },
-            Repository: { select: { name: selectName(entry.commit.repository) } },
-            Branch: { rich_text: rich(entry.commit.branch) },
-            Summary: { rich_text: rich(entry.summary) },
-            'Files Changed': { rich_text: rich(entry.files.join('\n')) },
-            Areas: { multi_select: entry.areas.map((a) => ({ name: selectName(a) })) },
-        };
+        const page = this.page(category);
+        let cursor;
+        do {
+            const data = await this.request('GET', `/blocks/${page}/children?page_size=100${cursor ? `&start_cursor=${cursor}` : ''}`);
+            if ((data.results ?? []).some((b) => plain(b) === `Commit: ${commitHash}`))
+                return true;
+            cursor = data.has_more ? data.next_cursor : undefined;
+        } while (cursor);
+        return false;
     }
     children(entry) {
         const c = entry.commit;
+        const scope = c.message.match(/^\w+\(([^)]+)\)!?:/)?.[1] ?? entry.areas[0];
+        const bullets = (items, max) => {
+            const out = items.slice(0, max).map((s) => block('bulleted_list_item', oneLine(s)));
+            if (items.length > max)
+                out.push(block('bulleted_list_item', `…and ${items.length - max} more`));
+            return out;
+        };
         const blocks = [
-            block('heading_2', 'Summary'),
+            block('heading_3', [c.date.slice(0, 10), BADGE[entry.category], scope && oneLine(scope)].filter(Boolean).join(' · ')),
+            block('paragraph', entry.title, {}, true),
+            block('bulleted_list_item', `Author: ${oneLine(c.author)}`),
+            block('bulleted_list_item', `Commit: ${c.hash}`),
+            block('bulleted_list_item', `Repository: ${oneLine(c.repository)} (${oneLine(c.branch)})`),
+            block('bulleted_list_item', `Impact: ${c.stats.files} file(s), +${c.stats.insertions}/-${c.stats.deletions}`),
+            block('bulleted_list_item', `Analysis: ${entry.analysis}${entry.truncated ? ' (diff truncated)' : ''}`),
             block('paragraph', entry.summary),
-            block('heading_2', 'Changes'),
-            ...(entry.changes.length ? entry.changes : ['—']).map((s) => block('bulleted_list_item', s)),
         ];
-        if (entry.technicalDetails.length) {
-            blocks.push(block('heading_2', 'Technical Details'), ...entry.technicalDetails.map((s) => block('bulleted_list_item', s)));
-        }
-        const files = entry.files.slice(0, 40).map((f) => block('bulleted_list_item', f));
-        if (entry.files.length > 40)
-            files.push(block('bulleted_list_item', `…and ${entry.files.length - 40} more`));
-        blocks.push(block('heading_2', 'Files Changed'), ...files);
-        blocks.push(block('heading_2', 'Commit Information'), block('bulleted_list_item', `Commit: ${c.hash}`), block('bulleted_list_item', `Author: ${c.author}`), block('bulleted_list_item', `Date: ${c.date}`), block('bulleted_list_item', `Repository: ${c.repository} (${c.branch})`), block('bulleted_list_item', `Stats: ${c.stats.files} file(s), +${c.stats.insertions}/-${c.stats.deletions}`), block('bulleted_list_item', `Analysis: ${entry.analysis}${entry.truncated ? ' (diff truncated)' : ''}`), block('code', c.message, { language: 'plain text' }));
-        return blocks.slice(0, 100); // Notion accepts at most 100 children per request
+        if (entry.changes.length)
+            blocks.push(block('paragraph', 'Changes', {}, true), ...bullets(entry.changes, 25));
+        if (entry.technicalDetails.length)
+            blocks.push(block('paragraph', 'Technical details', {}, true), ...bullets(entry.technicalDetails, 15));
+        blocks.push(block('toggle', `Files changed (${entry.files.length})`, { children: bullets(entry.files, 90) }), block('toggle', 'Commit message', { children: [block('code', c.message, { language: 'plain text' })] }), { object: 'block', type: 'divider', divider: {} });
+        return blocks;
     }
     async createEntry(entry) {
-        const id = this.db(entry.category);
-        if (!this.titleProperty.has(id))
-            await this.initialize();
-        await this.request('POST', '/pages', {
-            parent: { database_id: id },
-            properties: this.properties(entry, this.titleProperty.get(id) ?? 'Title'),
-            children: this.children(entry),
-        });
+        const page = this.page(entry.category);
+        const append = (children, after) => this.request('PATCH', `/blocks/${page}/children`, { children, ...(after ? { after } : {}) });
+        // Insert right after the page's first block (the intro line) so the newest entry is on top.
+        let anchor = (await this.request('GET', `/blocks/${page}/children?page_size=1`)).results?.[0]?.id;
+        if (!anchor)
+            anchor = (await append([intro()])).results?.[0]?.id;
+        await append(this.children(entry), anchor);
     }
     async testConnection() {
         try {
@@ -141,17 +122,17 @@ export class NotionDestination {
             return false;
         }
     }
-    /** Creates the three changelog databases under a Notion page the integration can access. */
-    static async createDatabases(parentPageId, token, fetchImpl = fetch) {
-        const dest = new NotionDestination({ databases: { codeChanges: '', bugFixes: '', featureUpdates: '' } }, token, fetchImpl);
+    /** Creates the three changelog pages under a Notion page the integration can access. */
+    static async createPages(parentPageId, token, fetchImpl = fetch) {
+        const dest = new NotionDestination({ pages: { codeChanges: '', bugFixes: '', featureUpdates: '' } }, token, fetchImpl);
         const ids = {};
-        for (const category of Object.keys(DB_KEY)) {
-            const db = await dest.request('POST', '/databases', {
-                parent: { type: 'page_id', page_id: parseNotionId(parentPageId) },
-                title: [{ type: 'text', text: { content: CATEGORY_LABELS[category] } }],
-                properties: { Title: { title: {} }, ...PROPERTIES },
+        for (const category of Object.keys(PAGE_KEY)) {
+            const page = await dest.request('POST', '/pages', {
+                parent: { page_id: parseNotionId(parentPageId) },
+                properties: { title: { title: rich(CATEGORY_LABELS[category]) } },
+                children: [intro()],
             });
-            ids[DB_KEY[category]] = db.id;
+            ids[PAGE_KEY[category]] = page.id;
         }
         return ids;
     }

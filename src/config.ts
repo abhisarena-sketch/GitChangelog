@@ -16,7 +16,7 @@ export interface ObsidianConfig {
 export interface NotionConfig {
   /** Prefer NOTION_TOKEN or `git-changelog config notion` (stored outside the repo's tracked files). */
   token?: string;
-  databases: { codeChanges: string; bugFixes: string; featureUpdates: string };
+  pages: { codeChanges: string; bugFixes: string; featureUpdates: string };
 }
 
 export interface Config {
@@ -95,9 +95,9 @@ export function validateConfig(config: Config): void {
     throw new ConfigError('destination.obsidian.vaultPath is missing. Run: git-changelog config obsidian');
   }
   if (destination.type === 'notion') {
-    const db = destination.notion?.databases;
+    const db = destination.notion?.pages;
     if (!db?.codeChanges || !db.bugFixes || !db.featureUpdates) {
-      throw new ConfigError('Notion database IDs are missing. Run: git-changelog config notion');
+      throw new ConfigError('Notion page IDs are missing. Run: git-changelog config notion');
     }
   }
   if (!['anthropic', 'openai'].includes(config.ai.provider)) {

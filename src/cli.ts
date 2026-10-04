@@ -32,7 +32,7 @@ Usage: git-changelog <command> [options]
 Commands:
   init                         Configure this repository and install the post-commit hook
       --destination <notion|obsidian>   --vault <path>   --folder <path>
-      --notion-token <token>   --notion-parent <page>   --notion-code-db/--notion-bug-db/--notion-feature-db <id>
+      --notion-token <token>   --notion-parent <page>   --notion-code-page/--notion-bug-page/--notion-feature-page <id>
       --ai <anthropic|openai|none>   --no-ai   --model <id>   --no-hook   --yes
   status                       Show hook, destination, AI provider and queue status
   analyze [--commit <ref>]     Analyze and publish a commit (default HEAD)
@@ -67,9 +67,9 @@ const DEST_OPTIONS = {
   folder: { type: 'string' },
   'notion-token': { type: 'string' },
   'notion-parent': { type: 'string' },
-  'notion-code-db': { type: 'string' },
-  'notion-bug-db': { type: 'string' },
-  'notion-feature-db': { type: 'string' },
+  'notion-code-page': { type: 'string' },
+  'notion-bug-page': { type: 'string' },
+  'notion-feature-page': { type: 'string' },
   yes: { type: 'boolean', short: 'y' },
 } as const;
 
@@ -133,41 +133,41 @@ async function configureNotion(root: string, flags: Flags, existing?: NotionConf
   } else if (process.env.NOTION_TOKEN) {
     console.log(ok('Using NOTION_TOKEN from the environment'));
   }
-  const probe = new NotionDestination({ databases: { codeChanges: '', bugFixes: '', featureUpdates: '' } }, token);
+  const probe = new NotionDestination({ pages: { codeChanges: '', bugFixes: '', featureUpdates: '' } }, token);
   if (await probe.testConnection()) console.log(ok('Notion token works'));
   else console.log(warn('Could not verify the Notion token (offline or invalid). Continuing.'));
 
-  const fromFlags = ['notion-code-db', 'notion-bug-db', 'notion-feature-db'].map((k) => str(flags[k]));
+  const fromFlags = ['notion-code-page', 'notion-bug-page', 'notion-feature-page'].map((k) => str(flags[k]));
   if (fromFlags.every(Boolean)) {
     const [codeChanges, bugFixes, featureUpdates] = fromFlags.map((v) => parseNotionId(v!));
-    return { databases: { codeChanges, bugFixes, featureUpdates } };
+    return { pages: { codeChanges, bugFixes, featureUpdates } };
   }
 
-  const hasExisting = !!(existing?.databases.codeChanges && existing.databases.bugFixes && existing.databases.featureUpdates);
+  const hasExisting = !!(existing?.pages.codeChanges && existing.pages.bugFixes && existing.pages.featureUpdates);
   let mode: 'create' | 'existing' | 'keep' = str(flags['notion-parent']) ? 'create' : hasExisting ? 'keep' : 'create';
   if (interactive() && !flags.yes && !str(flags['notion-parent'])) {
-    mode = await select('Notion databases', [
-      ...(hasExisting ? [{ value: 'keep' as const, label: 'Keep the current databases' }] : []),
-      { value: 'create' as const, label: 'Create three new databases in a Notion page' },
-      { value: 'existing' as const, label: 'Use existing database IDs' },
+    mode = await select('Notion pages', [
+      ...(hasExisting ? [{ value: 'keep' as const, label: 'Keep the current pages' }] : []),
+      { value: 'create' as const, label: 'Create three new pages under a Notion page' },
+      { value: 'existing' as const, label: 'Use existing page IDs' },
     ]);
   }
-  if (mode === 'keep') return { databases: existing!.databases };
+  if (mode === 'keep') return { pages: existing!.pages };
   if (mode === 'create') {
     const parent =
       str(flags['notion-parent']) ??
       (await ask('Parent page URL or ID (share the page with your integration first):', { validate: (v) => (v ? null : 'Required.') }));
-    const databases = await NotionDestination.createDatabases(parent, token);
-    console.log(ok('Created Notion databases: Code Changes, Bug Fixes, Feature Updates'));
-    return { databases };
+    const pages = await NotionDestination.createPages(parent, token);
+    console.log(ok('Created Notion pages: Code Changes, Bug Fixes, Feature Updates'));
+    return { pages };
   }
   const id = async (label: string, initial?: string) =>
-    parseNotionId(await ask(`${label} database ID or URL:`, { initial, validate: (v) => (v ? null : 'Required.') }));
+    parseNotionId(await ask(`${label} page ID or URL:`, { initial, validate: (v) => (v ? null : 'Required.') }));
   return {
-    databases: {
-      codeChanges: await id('Code Changes', existing?.databases.codeChanges),
-      bugFixes: await id('Bug Fixes', existing?.databases.bugFixes),
-      featureUpdates: await id('Feature Updates', existing?.databases.featureUpdates),
+    pages: {
+      codeChanges: await id('Code Changes', existing?.pages.codeChanges),
+      bugFixes: await id('Bug Fixes', existing?.pages.bugFixes),
+      featureUpdates: await id('Feature Updates', existing?.pages.featureUpdates),
     },
   };
 }
@@ -450,9 +450,9 @@ async function cmdDoctor() {
         if (reachable) {
           try {
             await dest.initialize();
-            check(true, 'Notion databases accessible');
+            check(true, 'Notion pages accessible');
           } catch (err) {
-            check(false, 'Notion databases', `${(err as Error).message} - share each database with your integration`);
+            check(false, 'Notion pages', `${(err as Error).message} - share each page with your integration`);
           }
         }
       }

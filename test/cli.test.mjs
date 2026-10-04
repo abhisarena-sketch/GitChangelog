@@ -198,7 +198,7 @@ describe('commands', () => {
 
   it('destination switching rewrites config to exactly one destination', () => {
     const dir = makeRepo('switch-cli');
-    writeConfig(dir, { destination: { type: 'notion', notion: { databases: { codeChanges: 'a', bugFixes: 'b', featureUpdates: 'c' } } } });
+    writeConfig(dir, { destination: { type: 'notion', notion: { pages: { codeChanges: 'a', bugFixes: 'b', featureUpdates: 'c' } } } });
     const vault = vaultDir('switch-cli');
     const res = cli(dir, ['destination', 'obsidian', '--vault', vault, '--yes']);
     assert.equal(res.status, 0, res.out);

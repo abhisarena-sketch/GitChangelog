@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Changed
 
 - Obsidian destination now writes one note per category (`Bug Fixes.md`, `Feature Updates.md`, `Code Changes.md`) instead of one note per commit. Entries are grouped by repository, newest first, and each records its author, commit, branch and impact. Existing per-commit notes are left untouched.
+- Notion destination now appends every commit to one page per category (newest first, with author, commit, repository and impact) instead of creating a database row per commit. **Breaking:** config uses `notion.pages` instead of `notion.databases`, and the `--notion-*-db` flags are now `--notion-*-page`; re-run `git-changelog config notion`.
 
 ## [0.1.0] - 2026-09-26
 
